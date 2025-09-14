@@ -1,4 +1,6 @@
 {
+  "proxy_host": "0.0.0.0",
+  "proxy_port": 5000,
   "api_key": "",
   "api_base_url": "https://generativelanguage.googleapis.com",
   "prompt_injection": {

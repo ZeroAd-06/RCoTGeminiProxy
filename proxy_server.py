@@ -7,7 +7,7 @@ import time
 from flask import Flask, request, Response, stream_with_context, jsonify
 
 
-# --- 配置加载 (添加了 history_rewriting 的默认值) ---
+# --- 配置加载 (添加了 proxy_host 和 proxy_port) ---
 def load_config():
     try:
         with open("config.json", "r", encoding="utf-8") as f:
@@ -21,7 +21,7 @@ def load_config():
         "generation_prefix": config.get("generation_prefix", {}),
         "markers": config.get("markers", {}),
         "retry_mechanism": config.get("retry_mechanism", {"enabled": False}),
-        "history_rewriting": config.get("history_rewriting", {"enabled": False})  # 默认禁用
+        "history_rewriting": config.get("history_rewriting", {"enabled": False})
     }
     cfg["markers"]["thought"] = cfg["markers"].get("thought", "_thought")
     cfg["markers"]["answer"] = cfg["markers"].get("answer", "_answer")
@@ -30,7 +30,7 @@ def load_config():
 
 CONFIG = load_config()
 
-# --- Flask 应用 ---
+# --- Flask 应用 (无变化) ---
 app = Flask(__name__)
 
 
@@ -50,13 +50,13 @@ def _split_and_yield(text_to_process, is_thinking_ref, json_template):
         pos_thought = thought_match.start() if thought_match else -1
         pos_answer = answer_match.start() if answer_match else -1
         if pos_thought != -1 and (pos_thought < pos_answer or pos_answer == -1):
-            pos_next_tag = pos_thought;
+            pos_next_tag = pos_thought
             next_tag = thought_marker
         elif pos_answer != -1:
-            pos_next_tag = pos_answer;
+            pos_next_tag = pos_answer
             next_tag = answer_marker
         else:
-            pos_next_tag = -1;
+            pos_next_tag = -1
             next_tag = None
         segment = text_to_process if pos_next_tag == -1 else text_to_process[:pos_next_tag]
         if segment:
@@ -77,9 +77,10 @@ def _split_and_yield(text_to_process, is_thinking_ref, json_template):
             text_to_process = ""
 
 
-# --- 主代理函数 (核心修改在此处) ---
+# --- 主代理函数 (无变化) ---
 @app.route('/v1beta/models/<path:model_name>:streamGenerateContent', methods=['POST'])
 def proxy_stream_generate_content(model_name):
+    # ... (代码与上一版完全相同)
     request_data = request.get_json(silent=True)
     if not request_data:
         return jsonify({"error": "Request body must be valid JSON."}), 400
@@ -97,7 +98,7 @@ def proxy_stream_generate_content(model_name):
             msg = contents[i]
             if msg.get("parts") and msg["parts"][0].get("text"):
                 original_text = msg["parts"][0]["text"]
-                thought_marker = CONFIG["markers"]["thought"];
+                thought_marker = CONFIG["markers"]["thought"]
                 answer_marker = CONFIG["markers"]["answer"]
                 end_marker = CONFIG.get("retry_mechanism", {}).get("end_marker", "")
                 placeholder = history_config.get("placeholder_text", "Thinking complete. Answer follows.")
@@ -139,7 +140,7 @@ def proxy_stream_generate_content(model_name):
 
     # --- 3. 调用 generate 函数 (与之前相同) ---
     def generate(initial_req, prefix):
-        # ... (generate 函数的全部内容与上一版完全相同) ...
+        # ... (generate 函数的全部内容与上一版完全相同)
         retry_config = CONFIG.get("retry_mechanism", {})
         use_retry = retry_config.get("enabled", False)
         retries_left = retry_config.get("max_retries", 3) if use_retry else 0
@@ -214,7 +215,15 @@ def proxy_stream_generate_content(model_name):
     return Response(stream_with_context(generate(initial_request, prefix_to_prepend)), content_type='text/event-stream')
 
 
+# --- 关键修改：使用配置启动服务器 ---
 if __name__ == '__main__':
     print("Configuration loaded:")
     print(json.dumps(CONFIG, indent=2))
-    app.run(host='0.0.0.0', port=5000, debug=True)
+
+    # 从加载的配置中获取主机和端口
+    host = CONFIG.get("proxy_host", "0.0.0.0")
+    port = CONFIG.get("proxy_port", 5000)
+
+    print(f"INFO: Starting proxy server on http://{host}:{port}")
+    # 使用配置的 host 和 port 启动应用
+    app.run(host=host, port=port, debug=True)
